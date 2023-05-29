@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 #pragma once
-#include <asio/io_context.hpp>
-#include <asio/random_access_file.hpp>
-#include <asio/stream_file.hpp>
+// #include <asio/io_context.hpp>
+// #include <asio/random_access_file.hpp>
+// #include <asio/stream_file.hpp>
 #include <cstddef>
 #include <exception>
 #include <iostream>
@@ -26,110 +26,80 @@
 #include <system_error>
 #include <utility>
 #include <vector>
+#include <fstream>
 
-#include "asio/file_base.hpp"
-#include "asio_coro_util.hpp"
-#include "async_simple/coro/Lazy.h"
+#include "coro_io/thread_pool.hpp"
+
+// #include "asio/file_base.hpp"
+// #include "asio_coro_util.hpp"
+// #include "async_simple/coro/Lazy.h"
 
 namespace ylt {
-#ifdef ASIO_HAS_LIB_AIO
-template <typename T, size_t alignment>
-class aligned_allocator {
- public:
-  using value_type = T;
-  template <typename U>
-  struct rebind {
-    using other = aligned_allocator<U, alignment>;
-  };
-  inline value_type* allocate(size_t size) const {
-    value_type* ptr;
-    auto ret = posix_memalign((void**)&ptr, alignment, sizeof(T) * size);
-    if (ret != 0)
-      throw std::bad_alloc();
-    return ptr;
-  };
 
-  inline void deallocate(value_type* const ptr, size_t n) const noexcept {
-    free(ptr);
-  }
-};
-#endif
-
-#if defined(ASIO_HAS_LIB_AIO)
-constexpr asio::file_base::flags coro_file_flags =
-    asio::stream_file::direct | asio::stream_file::read_write;
-#else
-constexpr asio::file_base::flags coro_file_flags =
-    asio::stream_file::read_write;
-#endif
-
+template <typename POOLTYPE = thread_pool>
 class coro_file {
  public:
-  coro_file(asio::io_context::executor_type executor,
-            const std::string& filepath,
-            asio::file_base::flags flags = coro_file_flags) {
-    try {
-      stream_file_ = std::make_unique<asio::stream_file>(executor);
-    } catch (std::exception& ex) {
-      std::cout << ex.what() << "\n";
+  using ThreadPoolPtr = std::shared_ptr<POOLTYPE>;
+  coro_file(const std::string& filepath, ThreadPoolPtr tp, 
+            size_t buf_size = 2048,
+            std::ios_base::openmode mode = std::ios_base::in |
+                                           std::ios_base::out)
+      : filepath_(filepath), tp_(tp), buf_size_(buf_size) {
+    file_.open(filepath, mode);
+    if (!file_.is_open()) {
+      std::cout << "failed to open file : [" << filepath_ << "]\n";
       return;
     }
-    stream_file_ = std::make_unique<asio::stream_file>(executor);
-    std::error_code ec;
-    stream_file_->open(filepath, flags, ec);
-    if (ec) {
-      std::cout << ec.message() << "\n";
-    }
     buf_.resize(buf_size_);
   }
 
-  bool set_buf_size(size_t size) {
-    if (size < 512) {
-      return false;
-    }
+  std::string_view filepath() {return filepath_; }
 
-    buf_size_ = size;
-    buf_.resize(buf_size_);
-    return true;
-  }
-
-  bool is_open() { return stream_file_ && stream_file_->is_open(); }
-
-  bool eof() { return eof_; }
-
-  async_simple::coro::Lazy<std::pair<std::error_code, std::string_view>>
-  async_read_some() {
-    auto [ec, size] = co_await asio_util::async_read_some(
-        *stream_file_, asio::buffer(buf_.data(), buf_.size()));
-    if (!ec) {
-      if (size > buf_size_) {
-        co_return std::make_pair(
-            std::make_error_code(std::errc::invalid_argument), "");
+  std::future<std::string_view> async_read() {
+    return tp_->enqueue_task([this]() {
+      if (!file_.is_open()) {
+        std::cout << "file [" << filepath_ <<  "] not open yet or has been closed\n";
+        return std::string_view("");
       }
-      read_total_ += size;
-      eof_ = (size < buf_size_);
-    }
-    std::error_code seek_ec;
-    stream_file_->seek(read_total_, asio::file_base::seek_basis::seek_set,
-                       seek_ec);
-    if (seek_ec) {
-      std::cout << seek_ec.message() << "\n";
-      co_return std::make_pair(std::make_error_code(std::errc::invalid_seek),
-                               "");
-    }
-    co_return std::make_pair(ec, std::string_view(buf_.data(), size));
+      file_.seekg(0, std::ios::end);
+      auto filesize = file_.tellg();
+      file_.seekg(0, std::ios::beg);
+      buf_.resize(filesize);
+
+      file_.read(&buf_[0], buf_.size());
+      if (!file_.good()) {
+          std::cout << "failed to read file: [" << filepath_ << "]\n";
+          return std::string_view("");
+      }
+      auto size = file_.gcount(); 
+      return std::string_view(buf_.data(), size);
+    });
   }
 
- private:
-  std::unique_ptr<asio::stream_file> stream_file_;
+  std::future<void> async_write(const char* data, size_t size) {
+    // the user hold the lifetime of data 
+    return tp_->enqueue_task([=]() {
+      if (!file_.is_open()) {
+        std::cout << "file [" << filepath_ <<  "] not open yet or has been closed\n";
+        return;
+      }
+      file_.seekp(0, std::ios::end);
+      file_.write(data, size);
+      if (!file_) {
+        std::cout << "failed to write file: [" << filepath_ << "]\n";
+        return;
+      }
+      file_.flush();
+    });
+  }
 
-  size_t buf_size_ = 2048;
-#ifdef ASIO_HAS_LIB_AIO
-  std::vector<char, aligned_allocator<char, 512>> buf_;
-#else
+  ~coro_file() = default;
+ private:
+  std::string filepath_;
+  ThreadPoolPtr tp_;
+  std::fstream file_;
+  size_t buf_size_;
   std::vector<char> buf_;
-#endif
-  size_t read_total_ = 0;
-  bool eof_ = false;
 };
-}  // namespace ylt
+
+} // namespace ylt

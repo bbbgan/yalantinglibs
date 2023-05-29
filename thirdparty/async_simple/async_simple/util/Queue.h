@@ -42,6 +42,17 @@ public:
         _cond.notify_one();
     }
 
+    bool try_push(T &&item) {
+        {
+            std::unique_lock lock(_mutex, std::try_to_lock);
+            if (!lock)
+                return false;
+            _queue.push(std::move(item));
+        }
+        _cond.notify_one();
+        return true;
+    }
+
     bool try_push(const T &item) {
         {
             std::unique_lock lock(_mutex, std::try_to_lock);

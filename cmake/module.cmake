@@ -1,13 +1,13 @@
 # module-list
 set(yLT_ALL_PROJECTS "struct_pack;struct_pb;struct_json;struct_xml;coro_rpc;easylog;coro_http;coro_file")
 # separate
-option(Build_ylt_struct_pack "Build struct_pack" ON)
-option(Build_ylt_struct_pb "Build struct_pb" ON)
-option(Build_ylt_struct_json "Build struct_json" ON)
-option(Build_ylt_struct_xml "Build struct_xml" ON)
-option(Build_ylt_coro_rpc "Build coro_rpc" ON)
-option(Build_ylt_easylog "Build easylog" ON)
-option(Build_ylt_coro_http "Build coro_http" ON)
+option(Build_ylt_struct_pack "Build struct_pack" OFF)
+option(Build_ylt_struct_pb "Build struct_pb" OFF)
+option(Build_ylt_struct_json "Build struct_json" OFF)
+option(Build_ylt_struct_xml "Build struct_xml" OFF)
+option(Build_ylt_coro_rpc "Build coro_rpc" OFF)
+option(Build_ylt_easylog "Build easylog" OFF)
+option(Build_ylt_coro_http "Build coro_http" OFF)
 option(Build_ylt_coro_file "Build coro_file" ON)
 
 foreach (proj ${yLT_ALL_PROJECTS})

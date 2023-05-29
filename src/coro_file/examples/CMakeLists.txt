@@ -19,18 +19,23 @@ SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
 include_directories(${yaLanTingLibs_SOURCE_DIR}/thirdparty/asio)
 include_directories(${yaLanTingLibs_SOURCE_DIR}/thirdparty/async_simple)
 
-add_executable(coro_file_example
-        main.cpp
+# add_executable(coro_file_example
+#         main.cpp
+#         )
+add_executable(thread_pool
+        thread_pool.cpp
         )
+        
+target_link_libraries(thread_pool -lpthread)
 
-if(ENABLE_LIBAIO)
-if (UNIX)
-    target_link_libraries(coro_file_example -lpthread aio)
-endif()
-endif()
+# if(ENABLE_LIBAIO)
+# if (UNIX)
+#     target_link_libraries(coro_file_example -lpthread aio)
+# endif()
+# endif()
 
-if(ENABLE_FILE_IO_URING)
-if (UNIX)
-    target_link_libraries(coro_file_example -luring)
-endif()
-endif()
+# if(ENABLE_FILE_IO_URING)
+# if (UNIX)
+#     target_link_libraries(coro_file_example -luring)
+# endif()
+# endif()
